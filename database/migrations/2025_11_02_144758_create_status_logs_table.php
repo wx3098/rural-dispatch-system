@@ -16,7 +16,7 @@ return new class extends Migration
 
             //どの配車依頼の状態が変わったか
             //依頼が削除されたら、履歴も削除
-            $table->foreignId('dispatch_id')->constrained('despatches')->onDelete('cascade');
+            $table->foreignId('dispatch_id')->constrained('dispatches')->onDelete('cascade');
 
             //変更前の状態
             $table->string('status_before', 50);

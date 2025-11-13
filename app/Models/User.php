@@ -6,6 +6,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class User extends Authenticatable
 {
@@ -21,6 +22,10 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'role',
+        'current_lat',
+        'current_lng',
+        'phone_number',
     ];
 
     /**
@@ -44,5 +49,25 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    //リレーションシップ
+
+    //ドライバーとして担当する車両（1対多）
+    public function vehcles(): HasMany
+    {
+        return $this->hasMany(Vehicle::class, 'driver_id');
+    }
+
+    //利用者として作成した配車依頼（1対多）
+    public function dispatches(): HasMany
+    {
+        return $this->hasMany(Dispatch::class, 'user_id');
+    }   
+
+    //状態変更を行った履歴（1対多）
+    public function statusLogs(): HasMany
+    {
+        return $this->hasMany(StatusLog::class, 'changed_by_user_id');
     }
 }
