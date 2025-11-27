@@ -21,10 +21,12 @@ return new class extends Migration
             $table->string('address', 255);
 
             //緯度
-            $table->float('lat', 10, 6);
+            $table->float('latitude', 10, 6);
 
             //経度
-            $table->float('lng', 10, 6);
+            $table->float('longitude', 10, 6);
+
+            $table->string('category');
 
             $table->timestamps();
         });

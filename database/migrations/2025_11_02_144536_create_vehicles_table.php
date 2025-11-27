@@ -21,7 +21,9 @@ return new class extends Migration
             $table->string('model_name', 50);
 
             //担当ドラバー
-            $table->foreignId('driver_id')->constrained('users')->onDelete('restrict');
+            $table->foreignId('driver_id')->nullable()->constrained('users')->onDelete('set null');
+
+            $table->string('status')->default('available');
             $table->timestamps();
         });
     }
