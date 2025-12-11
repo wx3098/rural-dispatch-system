@@ -19,7 +19,7 @@ Route::get('/', function () {
 Route::middleware(['auth', 'verified'])->group(function () {
 
     //管理者専用ルート
-    Route::prefix('admin')->middleware('role.admin')->group(function (){
+    Route::prefix('admin')->middleware('role:admin')->group(function (){
         Route::get('/dashboard', function () {
             return Inertia::render('Admin/AdminDashboard', [
                 'role' => Auth::user()->role
