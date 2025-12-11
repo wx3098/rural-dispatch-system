@@ -40,10 +40,10 @@ class AuthenticatedSessionController extends Controller
                 //管理者は/admin/dashboardへ
                 return redirect()->intended(route('admin.dashboard'));        
             case 'driver':
-                return redirect()->intended(route('driver.dahboard'));
+                return redirect()->intended(route('driver.dashboard'));
             case 'user':
             default:    
-                return redirect()->intended(route('user.dashboard.form'));
+                return redirect()->intended(route('user.dispatch.form'));
         }
 
     }
