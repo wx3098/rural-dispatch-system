@@ -15,25 +15,28 @@ return new class extends Migration
             $table->id();
 
             //誰の依頼か？
-            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('user_id')->constrained()->comment('依頼ユーザーID');
 
-            //どの車が配車したか
-            $table->foreignId('vehicle_id')->nullable()->constrained('vehicles')->onDelete('set null');
+            $table->string('start_location')->comment('出発地（ユーザー入力）');
+            
+            $table->string('end_location')->comment('目的地（ユーザー入力）');
 
-            //目的地
-            $table->foreignId('destination_id')->constrained('destinations')->onDelete('restrict');
+            $table->timestamp('requested_pickup_datetime')->comment('希望乗車日時');
 
             //状態遷移
-            $table->enum('status', ['requested', 'allocated', 'in_progress', 'completed', 'cancelled'])->default('requested');
+             $table->enum('status', ['pending', 'assigned', 'completed', 'cancelled'])->default('pending')->comment('ステータス');
 
-            //利用者希望日時
-            $table->datetime('requested_pickup_datetime');
+            //どの車が配車したか
+            $table->foreignId('vehicle_id')->nullable()->constrained('vehicles')->comment('割り当て車両ID');
+
+            //目的地
+            $table->foreignId('destination_id')->nullable()->constrained('destinations')->comment('目的地マスタID');
 
             //システム計算予定時刻
-            $table->datetime('schedule_arrival_datetime')->nullable();
+            $table->datetime('schedule_arrival_datetime')->nullable()->comment('到着予定日時');
 
-            //実際の送迎完了時刻
-            $table->datetime('actual_completed_at')->nullable();
+            //実際の送迎完了日時
+            $table->timestamp('actual_completed_at')->nullable()->comment('完了日時');
 
             $table->timestamps();
         });

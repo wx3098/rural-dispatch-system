@@ -6,6 +6,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
+use App\Http\Controllers\User\DispatchController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -37,12 +38,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 
     //一般利用者専用ルート
-    Route::prefix('user')->middleware('role:user')->group(function () {
-        Route::get('/dispatch', function () {
-            return Inertia::render('User/DispatchRequestForm', [
-                'role' => Auth::user()->role
-            ]);
-        })->name('user.dispatch.form');
+   Route::prefix('user')->name('user.')->group(function () {
+        // ★ 修正: ここにあったインポート文は削除します ★
+        
+        // 配車リクエストフォーム表示
+        Route::get('/dispatch/form', [DispatchController::class, 'form'])->name('dispatch.form');
+        
+        // 配車リクエスト保存処理
+        Route::post('/dispatch/store', [DispatchController::class, 'store'])->name('dispatch.store');
+            
     });
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');

@@ -22,10 +22,12 @@ class DispatchSeeder extends Seeder
     if ($clinentUser && $vehicle1 && $hospital) {
         Dispatch::create([
             'user_id' => $clinentUser->id,
+            'start_location' => '福岡県北九州市小倉南区平尾台 1丁目5-3',
+            'end_location' => '福岡県北九州市戸畑区新池 15番地', 
             'vehicle_id' => $vehicle1->id,
             'destination_id' =>$hospital->id,
-            'status' => 'allocated',
-            'requested_pickup_datetime' => now()->addHour(),
+            'status' => 'assigned',
+            'requested_pickup_datetime' => now()->addMinutes(30),
         ]);
     }
   }
