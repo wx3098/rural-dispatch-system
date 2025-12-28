@@ -17,6 +17,8 @@ return new class extends Migration
             //誰の依頼か？
             $table->foreignId('user_id')->constrained()->comment('依頼ユーザーID');
 
+            $table->foreignId('driver_id')->nullable()->constrained('users')->comment('担当ドライバーID');
+
             $table->string('start_location')->comment('出発地（ユーザー入力）');
             
             $table->string('end_location')->comment('目的地（ユーザー入力）');

@@ -4,7 +4,6 @@ import { Head, useForm, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
 const props = defineProps({
-    // コントローラーから渡される現在アクティブなリクエスト情報
     activeRequest: {
         type: Object,
         default: null,
@@ -12,41 +11,46 @@ const props = defineProps({
     role: String, 
 });
 
-// Inertia Formの定義
 const form = useForm({
     start_location: '',
     end_location: '',
-    requested_pickup_datetime: '', // ★ 必須項目: 希望乗車日時 ★
+    requested_pickup_datetime: '',
 });
 
-// フォームの送信処理
 const submit = () => {
-    // フォーム送信は user.dispatch.store ルートへPOSTします
     form.post(route('user.dispatch.store'), {
         onSuccess: () => {
-            // 成功したらフォームをリセット
             form.reset('start_location', 'end_location', 'requested_pickup_datetime');
         },
     });
 };
 
-// アクティブなリクエストが存在する場合、フォームをロック（操作不可）にする
+// フォームをロックする条件：リクエストが存在し、かつ完了（completed）していない場合
 const isFormLocked = computed(() => !!props.activeRequest);
 
-// フラッシュメッセージ (成功/エラー) を取得
+// ★ 修正ポイント：ドライバーが確定したかを厳密に判定する
+// driver_id が入っている、かつステータスが pending ではない場合
+const isDriverAssigned = computed(() => {
+    return props.activeRequest && props.activeRequest.driver_id !== null;
+});
+
 const successMessage = computed(() => usePage().props.flash?.success);
 const errors = computed(() => usePage().props.errors);
 
-// 画面に表示する現在のステータスを計算
 const currentStatusText = computed(() => {
     if (props.activeRequest) {
+        // ステータスと driver_id の両方を見てテキストを出し分ける
+        if (!props.activeRequest.driver_id) {
+            return 'ドライバーを探しています... (待機中)';
+        }
+        
         switch (props.activeRequest.status) {
-            case 'pending':
-                return 'リクエスト待機中 (処理待ち)';
-            case 'assigned':
-                return 'ドライバー割り当て済み';
+            case 'accepted':
+                return 'ドライバーが確定しました';
+            case 'in_transit':
+                return '現在、配送中です';
             default:
-                return 'ステータス不明';
+                return 'ドライバーが向かっています';
         }
     }
     return '現在アクティブなリクエストはありません。';
@@ -65,11 +69,9 @@ const currentStatusText = computed(() => {
             <div class="max-w-3xl mx-auto sm:px-6 lg:px-8">
                 <div class="bg-white overflow-hidden shadow-xl sm:rounded-lg p-6 md:p-8">
                     
-                    <!-- 成功メッセージ表示 -->
                     <div v-if="successMessage" class="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded-lg">
                         {{ successMessage }}
                     </div>
-                    <!-- エラーメッセージ表示 (リクエスト制限エラーなど) -->
                     <div v-if="errors.request_limit" class="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
                         {{ errors.request_limit }}
                     </div>
@@ -78,8 +80,6 @@ const currentStatusText = computed(() => {
                     <p class="text-sm text-gray-500 mb-6">あなたの権限: <span class="font-medium text-indigo-600">{{ role || 'ユーザー' }}</span></p>
 
                     <form @submit.prevent="submit" class="space-y-6">
-                        
-                        <!-- 出発地 -->
                         <div>
                             <label for="start_location" class="block text-sm font-medium text-gray-700">出発地</label>
                             <input 
@@ -93,7 +93,6 @@ const currentStatusText = computed(() => {
                             <div v-if="form.errors.start_location" class="text-sm text-red-600 mt-1">{{ form.errors.start_location }}</div>
                         </div>
 
-                        <!-- 目的地 -->
                         <div>
                             <label for="end_location" class="block text-sm font-medium text-gray-700">目的地</label>
                             <input 
@@ -107,7 +106,6 @@ const currentStatusText = computed(() => {
                             <div v-if="form.errors.end_location" class="text-sm text-red-600 mt-1">{{ form.errors.end_location }}</div>
                         </div>
                         
-                        <!-- 希望乗車日時 -->
                         <div>
                             <label for="requested_pickup_datetime" class="block text-sm font-medium text-gray-700">希望乗車日時</label>
                             <input 
@@ -121,8 +119,6 @@ const currentStatusText = computed(() => {
                             <div v-if="form.errors.requested_pickup_datetime" class="text-sm text-red-600 mt-1">{{ form.errors.requested_pickup_datetime }}</div>
                         </div>
 
-
-                        <!-- リクエストボタン -->
                         <div class="pt-4">
                             <button 
                                 type="submit" 
@@ -136,21 +132,29 @@ const currentStatusText = computed(() => {
                         </div>
                     </form>
 
-                    <!-- 現在のリクエストステータス -->
-                    <div class="mt-8 pt-6 border-t border-gray-200">
-                        <h4 class="text-lg font-semibold text-gray-700 mb-2">現在のリクエストステータス</h4>
-                        <div 
-                            :class="[
-                                'p-4 rounded-lg font-medium',
-                                isFormLocked ? 'bg-yellow-100 text-yellow-800 border border-yellow-400' : 'bg-green-100 text-green-800 border border-green-400'
-                            ]"
-                        >
-                            {{ currentStatusText }}
-                            <div v-if="isFormLocked && activeRequest" class="text-sm mt-1 text-yellow-600">
-                                <span v-if="activeRequest.status === 'pending'">管理者がドライバーを割り当てるのをお待ちください。</span>
-                                <span v-else>ドライバーが向かっています。</span>
-                                <p class="text-xs mt-1">出発地: {{ activeRequest.start_location }} / 目的地: {{ activeRequest.end_location }}</p>
-                                <p class="text-xs mt-1">希望日時: {{ new Date(activeRequest.requested_pickup_datetime).toLocaleString('ja-JP') }}</p>
+                    <!-- 現在のリクエストステータス表示エリア -->
+                    <div v-if="activeRequest" class="mt-8 pt-6 border-t border-gray-200">
+                        <h4 class="text-lg font-semibold text-gray-700 mb-2">現在の状況</h4>
+                        
+                        <!-- ドライバー未確定 (driver_id が null) -->
+                        <div v-if="!isDriverAssigned" class="p-4 rounded-lg bg-yellow-50 border border-yellow-200">
+                            <div class="flex items-center">
+                                <span class="animate-pulse mr-2 text-yellow-500">●</span>
+                                <p class="text-yellow-800 font-bold">{{ currentStatusText }}</p>
+                            </div>
+                            <p class="text-sm mt-2 text-yellow-700">近隣のドライバーにリクエストを送信しています。確定までしばらくお待ちください。</p>
+                        </div>
+
+                        <!-- ドライバー確定済み (driver_id が存在) -->
+                        <div v-else class="p-4 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800">
+                            <div class="flex justify-between items-center mb-2">
+                                <p class="font-bold text-lg">{{ currentStatusText }}</p>
+                                <span class="bg-indigo-600 text-white text-xs px-2 py-1 rounded">確定</span>
+                            </div>
+                            <div class="space-y-1 text-sm">
+                                <p>担当ドライバー: <span class="font-bold">{{ activeRequest.driver?.name || '手配中' }}</span></p>
+                                <p>出発地: {{ activeRequest.start_location }}</p>
+                                <p>到着地: {{ activeRequest.end_location }}</p>
                             </div>
                         </div>
                     </div>

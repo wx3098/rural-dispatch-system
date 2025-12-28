@@ -26,7 +26,8 @@ class DispatchSeeder extends Seeder
             'end_location' => '福岡県北九州市戸畑区新池 15番地', 
             'vehicle_id' => $vehicle1->id,
             'destination_id' =>$hospital->id,
-            'status' => 'assigned',
+            'status' => 'pending',
+            'driver_id' => null,
             'requested_pickup_datetime' => now()->addMinutes(30),
         ]);
     }
