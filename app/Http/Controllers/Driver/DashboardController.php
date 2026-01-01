@@ -73,7 +73,8 @@ class DashboardController extends Controller
         }
 
         $dispatch->update([
-            'status' => 'completed',
+            'driver_id' => Auth::id(),
+            'status' => 'accepted',
         ]);
 
         return redirect()->route('driver.dashboard')->with('success', 'お疲れ様でした！配送完了を記録しました。');

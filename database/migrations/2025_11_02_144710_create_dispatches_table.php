@@ -26,7 +26,7 @@ return new class extends Migration
             $table->timestamp('requested_pickup_datetime')->comment('希望乗車日時');
 
             //状態遷移
-             $table->enum('status', ['pending', 'assigned', 'completed', 'cancelled'])->default('pending')->comment('ステータス');
+             $table->enum('status', ['pending', 'accepted', 'completed', 'cancelled'])->default('pending')->comment('ステータス');
 
             //どの車が配車したか
             $table->foreignId('vehicle_id')->nullable()->constrained('vehicles')->comment('割り当て車両ID');
