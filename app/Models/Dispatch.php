@@ -14,9 +14,13 @@ class Dispatch extends Model
 
     protected $fillable = [
         'user_id',
+        'driver_id',
+        'start_location',
+        'end_location',
+        'requested_pickup_datetime',
+        'status',
         'vehicle_id',
         'destination_id',
-        'requested_pickup_datetime',
         'schedule_arrival_datetime',
         'actual_completed_at',
     ];
