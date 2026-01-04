@@ -29,14 +29,14 @@ class DashboardController extends Controller
 
         // 2. 自分が現在引き受けているリクエスト
         // ユーザー側の画面で名前を表示できるよう 'user' リレーションを含める
-        $activeAssignment = Dispatch::with('user:id,name')
+        $activeAssignments = Dispatch::with('user:id,name')
             ->where('driver_id', $user->id)
             ->whereIn('status', ['accepted', 'in_transit']) // Vue側のステータス判定と合わせる
-            ->first();
+            ->get();
 
         return Inertia::render('Driver/DriverDashboard', [
             'pendingDispatches' => $pendingDispatches,
-            'activeAssignment' => $activeAssignment,
+            'activeAssignments' => $activeAssignments,
         ]);
     }
 
