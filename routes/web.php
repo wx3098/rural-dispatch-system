@@ -34,10 +34,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
         
         // 配車受諾処理
-        Route::post('/dispatches/{dispatch}/accept', [DashboardController::class, 'accept'])->name('dispatches.accept');
+        Route::post('/dispatches/{dispatch}/accept', [DashboardController::class, 'accept'])->name('accept');
         
         // 配車完了処理
-        Route::post('/dispatches/{dispatch}/complete', [DashboardController::class, 'complete'])->name('dispatches.complete');
+         Route::post('/dispatches/{dispatch}/complete', [DashboardController::class, 'complete'])->name('complete');
+
+        //配車一括完了処理
+        Route::post('/dashboard/bulk-complete', [DashboardController::class, 'bulkComplete'])->name('dashboard.bulk-complete');
     });
 
     // 一般利用者専用ルート

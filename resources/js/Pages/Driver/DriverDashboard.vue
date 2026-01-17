@@ -1,12 +1,13 @@
 <script setup>
-import { ref,watch, onMounted } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
 const props = defineProps({
     auth: Object,
     pendingDispatches: { type: Array, default: () => [] },
-    activeAssignment: { type: Object, default: null },
+    // 単数から複数(Array)に変更。Controllerの修正に合わせています
+    activeAssignments: { type: Array, default: () => [] },
     flash: { type: Object, default: () => ({ success: null, error: null }) }
 });
 
@@ -14,12 +15,12 @@ const props = defineProps({
 const form = useForm({});
 const page = usePage();
 
-//通知管理用の状態
+// 通知管理用の状態
 const showToast = ref(false);
 const toastMessage = ref('');
 const toastType = ref('success');
 
-//通知を表示する関数
+// 通知を表示する関数
 const notify = (message, type = 'success') => {
     toastMessage.value = message;
     toastType.value = type;
@@ -28,47 +29,64 @@ const notify = (message, type = 'success') => {
         showToast.value = false;
     }, 5000);
 }
+
+/**
+ * 目的地ごとにグループ化する計算プロパティ
+ */
+const groupedAssignments = computed(() => {
+    return props.activeAssignments.reduce((acc, curr) => {
+        const loc = curr.end_location || '目的地未設定';
+        if (!acc[loc]) acc[loc] = [];
+        acc[loc].push(curr);
+        return acc;
+    }, {});
+});
+
 /**
  * 受諾ボタンのハンドラー
  */
 const handleAccept = (id) => {
     if (!id) return;
-    
     if (confirm('この依頼を受諾しますか？')) {
         form.post(`/driver/dispatches/${id}/accept`, {
             preserveScroll: true,
-            onSuccess: () => {
-                notify('依頼を受諾しました。安全運転でお願いします');
-            },
-            onError: (errors) => {
-                notify('受諾処理中にエラーが発生しました', 'errors');
-            }
+            onSuccess: () => notify('依頼を受諾しました。安全運転でお願いします'),
+        });
+    }
+};
+
+const handleSingleComplete = (dispatch) => {
+    if (!dispatch || !dispatch.id) return;
+
+    const userName = dispatch.user?.name || '利用者'
+    if (confirm(`${userName}様の報告をしますか？`)) {
+
+        form.post(route('driver.complete', {dispatch: dispatch.id}), {
+            preserveScroll: true,
+            onSuccess: () => notify(`${userName} 様の報告をしました。`),
+            onError: () => notify('処理中にエラーが発生しました。', 'error')
         });
     }
 };
 
 /**
- * 完了ボタンのハンドラー
- * こちらも直接URL（/driver/dispatches/{id}/complete）を指定します
+ * 一括完了ボタンのハンドラー
  */
-const handleComplete = (id) => {
-    if (!id) return;
-
-    if (confirm('配送完了を報告しますか？')) {
-        // 直接パスを指定してPOSTします
-        form.post(`/driver/dispatches/${id}/complete`, {
+const handleBulkComplete = (location, dispatches) => {
+    const ids = dispatches.map(d => d.id);
+    if (confirm(`「${location}」へ到着した ${ids.length} 名の送迎を完了しますか？`)) {
+        form.post(route('driver.dashboard.bulk-complete'), {
+            // 送信するデータ
+            dispatch_ids: ids
+        }, {
             preserveScroll: true,
-            onSuccess: () => {
-                notify('配送完了を報告しました。お疲れ様でした！');
-            },
-            onError: (errors) => {
-                notify('完了報告中にエラーが発生しました。', 'error');
-            }
+            onSuccess: () => notify('一括完了を報告しました。お疲れ様でした！'),
+            onError: () => notify('処理中にエラーが発生しました', 'error')
         });
     }
 };
 
-// サーバーサイドからのフラッシュメッセージ（Session::flash）を監視
+// サーバーサイドからのフラッシュメッセージを監視
 watch(() => page.props.flash?.success, (newVal) => {
     if (newVal) notify(newVal, 'success');
 });
@@ -85,7 +103,7 @@ const openMap = (location) => {
 <template>
     <Head title="ドライバーダッシュボード" />
 
-     <Transition
+    <Transition
         enter-active-class="transform ease-out duration-300 transition"
         enter-from-class="translate-y-[-20px] opacity-0"
         enter-to-class="translate-y-0 opacity-100"
@@ -97,7 +115,7 @@ const openMap = (location) => {
              class="fixed top-5 right-5 z-[100] flex items-center p-4 w-full max-w-xs rounded-2xl shadow-2xl border-2 backdrop-blur-md"
              :class="toastType === 'success' ? 'bg-green-50/90 text-green-800 border-green-200' : 'bg-red-50/90 text-red-800 border-red-200'">
             <div class="ml-3 text-sm font-black">{{ toastMessage }}</div>
-            <button @click="showToast = false" class="ml-auto text-gray-400 hover:text-gray-900 px-2 transition-colors">
+            <button @click="showToast = false" class="ml-auto text-gray-400 hover:text-gray-900 px-2">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -109,56 +127,63 @@ const openMap = (location) => {
         <div class="py-12 bg-slate-50 min-h-screen font-sans">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
                 
-                <!-- 現在の任務 -->
-                <section v-if="props.activeAssignment">
+                <!-- 現在の任務（一括完了対応） -->
+                <section>
                     <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-slate-700">
                         <span class="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></span>
-                        対応中の任務
+                        対応中の任務（目的地別）
                     </h3>
-                    <div class="bg-white rounded-[2rem] p-8 shadow-sm border border-slate-200 transition-all hover:shadow-md">
-                        <div class="flex justify-between items-start mb-8">
-                            <div>
-                                <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">依頼主</p>
-                                <p class="text-2xl font-black text-slate-900">{{ props.activeAssignment.user?.name || '名称不明' }} 様</p>
+                    
+                    <div v-if="Object.keys(groupedAssignments).length > 0" class="space-y-6">
+                        <div v-for="(dispatches, location) in groupedAssignments" :key="location" 
+                             class="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden transition-all hover:shadow-md">
+                            
+                            <!-- 目的地ヘッダー -->
+                            <div class="bg-slate-50 px-8 py-4 border-b border-slate-100 flex justify-between items-center">
+                                <div @click="openMap(location)" class="flex items-center gap-2 cursor-pointer group">
+                                    <span class="text-blue-600 group-hover:scale-125 transition-transform">📍</span>
+                                    <span class="font-black text-slate-800 underline decoration-blue-200 decoration-4 underline-offset-4">{{ location }}</span>
+                                </div>
+                                <span class="bg-blue-100 text-blue-700 text-[10px] font-black px-3 py-1 rounded-full uppercase">
+                                    {{ dispatches.length }}名 走行中
+                                </span>
                             </div>
-                            <div class="text-right">
-                                <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">依頼ID</p>
-                                <p class="text-xs font-mono bg-slate-100 px-2 py-1 rounded">#{{ props.activeAssignment.id }}</p>
+
+                            <!-- 利用者リスト -->
+                            <div class="p-8 space-y-4">
+                                <div v-for="dispatch in dispatches" :key="dispatch.id" class="flex justify-between items-center bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+                                    <div>
+                                        <p class="text-lg font-black text-slate-900">{{ dispatch.user?.name || '名称不明' }} 様</p>
+                                        <p class="text-[10px] text-slate-400 font-bold mt-1">
+                                            乗車場所: {{ dispatch.start_location }}
+                                        </p>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="text-xs font-mono text-slate-400">#{{ dispatch.id }}</p>
+                                    </div>
+                                </div>
+                                
+                                <button 
+                                    @click="handleBulkComplete(location, dispatches)"
+                                    :disabled="form.processing"
+                                    class="w-full mt-4 py-5 bg-slate-900 text-white rounded-2xl font-black hover:bg-black transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3 text-lg shadow-xl"
+                                >
+                                    <svg v-if="form.processing" class="animate-spin h-6 w-6 text-white" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    <span>{{ form.processing ? '処理中...' : `「${location}」到着完了を報告` }}</span>
+                                </button>
                             </div>
                         </div>
-
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                            <div @click="openMap(props.activeAssignment.start_location)" class="p-5 bg-slate-50 rounded-2xl cursor-pointer hover:bg-blue-50 transition-all border-2 border-transparent hover:border-blue-100 group">
-                                <p class="text-[10px] text-blue-600 font-black mb-1 flex items-center gap-1">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                                    出発地 (地図を表示)
-                                </p>
-                                <p class="text-md font-bold text-slate-700 leading-snug">{{ props.activeAssignment.start_location }}</p>
-                            </div>
-                            <div @click="openMap(props.activeAssignment.end_location)" class="p-5 bg-slate-50 rounded-2xl cursor-pointer hover:bg-rose-50 transition-all border-2 border-transparent hover:border-rose-100 group">
-                                <p class="text-[10px] text-rose-600 font-black mb-1 flex items-center gap-1">
-                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-                                    到着地 (地図を表示)
-                                </p>
-                                <p class="text-md font-bold text-slate-700 leading-snug">{{ props.activeAssignment.end_location }}</p>
-                            </div>
-                        </div>
-
-                        <button 
-                            @click="handleComplete(props.activeAssignment.id)"
-                            :disabled="form.processing"
-                            class="w-full py-5 bg-slate-900 text-white rounded-2xl font-black hover:bg-black transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3 text-lg"
-                        >
-                            <svg v-if="form.processing" class="animate-spin h-6 w-6 text-white" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            <span>{{ form.processing ? '報告を送信中...' : '配送完了を報告' }}</span>
-                        </button>
+                    </div>
+                    
+                    <div v-else class="text-center py-20 bg-white rounded-[2rem] border-2 border-dashed border-slate-200">
+                        <p class="text-slate-400 font-bold uppercase tracking-widest text-sm">現在、担当中の依頼はありません</p>
                     </div>
                 </section>
 
-                <!-- 新着依頼リスト -->
+                <!-- 新着依頼リスト（変更なし） -->
                 <section>
                     <h3 class="text-lg font-bold mb-4 text-slate-700">新着依頼</h3>
                     <div v-if="props.pendingDispatches?.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -175,8 +200,8 @@ const openMap = (location) => {
                                 <span class="text-xs font-bold text-slate-400">{{ dispatch.user?.name || '匿名ユーザー' }}</span>
                                 <button 
                                     @click="handleAccept(dispatch.id)"
-                                    :disabled="form.processing || props.activeAssignment"
-                                    class="px-6 py-2 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 disabled:bg-slate-100 disabled:text-slate-400 transition-all uppercase tracking-tighter"
+                                    :disabled="form.processing"
+                                    class="px-6 py-2 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 disabled:bg-slate-100 disabled:text-slate-400 transition-all uppercase tracking-tighter shadow-md"
                                 >
                                     受諾する
                                 </button>
@@ -184,9 +209,6 @@ const openMap = (location) => {
                         </div>
                     </div>
                     <div v-else class="text-center py-20 bg-white rounded-[2rem] border-2 border-dashed border-slate-200">
-                        <div class="inline-flex p-4 rounded-full bg-slate-50 text-slate-300 mb-4">
-                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
-                        </div>
                         <p class="text-slate-400 font-bold uppercase tracking-widest text-sm">現在、新しい依頼はありません</p>
                     </div>
                 </section>
