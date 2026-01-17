@@ -8,7 +8,10 @@ const props = defineProps({
         type: Object,
         default: null,
     },
-    role: String, 
+    role: {
+        type: [Object, String],
+        default: null,
+    } 
 });
 
 const form = useForm({
@@ -18,43 +21,58 @@ const form = useForm({
 });
 
 const submit = () => {
-    form.post(route('user.dispatch.store'), {
+    // route()関数のエラーを徹底回避
+    let url = '/user/dispatch';
+    try {
+        if (typeof route !== 'undefined') {
+            url = route('user.dispatch.store');
+        }
+    } catch (e) {
+        console.error('Route error:', e);
+    }
+    
+    form.post(url, {
+        preserveScroll: true,
         onSuccess: () => {
-            form.reset('start_location', 'end_location', 'requested_pickup_datetime');
+            form.reset();
         },
     });
 };
 
-// フォームをロックする条件：リクエストが存在し、かつ完了（completed）していない場合
-const isFormLocked = computed(() => !!props.activeRequest);
-
-// ★ 修正ポイント：ドライバーが確定したかを厳密に判定する
-// driver_id が入っている、かつステータスが pending ではない場合
-const isDriverAssigned = computed(() => {
-    return props.activeRequest && props.activeRequest.driver_id !== null;
+// 計算プロパティの中身もすべて「?」で保護
+const isFormLocked = computed(() => {
+    return !!(props.activeRequest && props.activeRequest?.status !== 'completed');
 });
 
-const successMessage = computed(() => usePage().props.flash?.success);
-const errors = computed(() => usePage().props.errors);
+const isDriverAssigned = computed(() => {
+    return !!(props.activeRequest?.driver_id);
+});
 
 const currentStatusText = computed(() => {
-    if (props.activeRequest) {
-        // ステータスと driver_id の両方を見てテキストを出し分ける
-        if (!props.activeRequest.driver_id) {
-            return 'ドライバーを探しています... (待機中)';
-        }
-        
-        switch (props.activeRequest.status) {
-            case 'accepted':
-                return 'ドライバーが確定しました';
-            case 'in_transit':
-                return '現在、配送中です';
-            default:
-                return 'ドライバーが向かっています';
-        }
+    if (!props.activeRequest) return '現在リクエストはありません';
+    
+    const status = props.activeRequest?.status;
+    const hasDriver = !!props.activeRequest?.driver_id;
+
+    if (!hasDriver) return 'ドライバーを探しています...';
+    
+    switch (status) {
+        case 'accepted': return 'ドライバーが確定しました';
+        case 'in_transit': return '配送中です';
+        default: return 'ドライバーが向かっています';
     }
-    return '現在アクティブなリクエストはありません。';
 });
+
+// roleを表示用に文字列化
+const roleDisplayName = computed(() => {
+    if (!props.role) return 'ユーザー';
+    return typeof props.role === 'object' ? (props.role.name || 'ユーザー') : props.role;
+});
+
+// フラッシュメッセージ
+const successMessage = computed(() => usePage().props.flash?.success);
+const serverErrors = computed(() => usePage().props.errors || {});
+
 </script>
 
 <template>
@@ -65,96 +83,85 @@ const currentStatusText = computed(() => {
             <h2 class="font-semibold text-xl text-gray-800 leading-tight">配車依頼フォーム</h2>
         </template>
 
-        <div class="py-12">
+        <div class="py-12 bg-gray-50 min-h-screen text-gray-900">
             <div class="max-w-3xl mx-auto sm:px-6 lg:px-8">
-                <div class="bg-white overflow-hidden shadow-xl sm:rounded-lg p-6 md:p-8">
+                
+                <!-- エラーがあれば表示 -->
+                <div v-if="Object.keys(serverErrors).length > 0" class="mb-4 p-4 bg-red-50 border-red-500 text-red-700 border rounded">
+                    <ul class="list-disc ml-5">
+                        <li v-for="(error, key) in serverErrors" :key="key">{{ error }}</li>
+                    </ul>
+                </div>
+
+                <div class="bg-white shadow-xl rounded-2xl p-6 md:p-8">
                     
-                    <div v-if="successMessage" class="mb-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded-lg">
+                    <div v-if="successMessage" class="mb-6 p-4 bg-green-50 text-green-700 rounded-xl border border-green-200">
                         {{ successMessage }}
                     </div>
-                    <div v-if="errors.request_limit" class="mb-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
-                        {{ errors.request_limit }}
+
+                    <div class="mb-8">
+                        <h3 class="text-xl font-bold">配車を依頼する</h3>
+                        <p class="text-xs text-gray-400 mt-1 uppercase">権限: {{ roleDisplayName }}</p>
                     </div>
 
-                    <h3 class="text-2xl font-bold mb-4 text-gray-700">配車を依頼する場所と目的地を入力してください</h3>
-                    <p class="text-sm text-gray-500 mb-6">あなたの権限: <span class="font-medium text-indigo-600">{{ role || 'ユーザー' }}</span></p>
-
-                    <form @submit.prevent="submit" class="space-y-6">
+                    <form @submit.prevent="submit" class="space-y-5">
                         <div>
-                            <label for="start_location" class="block text-sm font-medium text-gray-700">出発地</label>
+                            <label class="block text-sm font-bold text-gray-600 mb-1">出発地</label>
                             <input 
-                                id="start_location" 
-                                type="text" 
                                 v-model="form.start_location" 
                                 :disabled="isFormLocked || form.processing"
-                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm placeholder:text-gray-400 focus:border-indigo-500 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-500"
-                                placeholder="例: 現在地、自宅、北九州市役所"
+                                type="text" 
+                                class="w-full rounded-xl border-gray-300 disabled:bg-gray-100"
+                                placeholder="例：北九州市立大学"
                             />
-                            <div v-if="form.errors.start_location" class="text-sm text-red-600 mt-1">{{ form.errors.start_location }}</div>
                         </div>
 
                         <div>
-                            <label for="end_location" class="block text-sm font-medium text-gray-700">目的地</label>
+                            <label class="block text-sm font-bold text-gray-600 mb-1">目的地</label>
                             <input 
-                                id="end_location" 
-                                type="text" 
                                 v-model="form.end_location"
                                 :disabled="isFormLocked || form.processing"
-                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm placeholder:text-gray-400 focus:border-indigo-500 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-500"
-                                placeholder="例: 小倉駅、病院、取引先"
+                                type="text" 
+                                class="w-full rounded-xl border-gray-300 disabled:bg-gray-100"
+                                placeholder="例：小倉駅"
                             />
-                            <div v-if="form.errors.end_location" class="text-sm text-red-600 mt-1">{{ form.errors.end_location }}</div>
                         </div>
-                        
+
                         <div>
-                            <label for="requested_pickup_datetime" class="block text-sm font-medium text-gray-700">希望乗車日時</label>
+                            <label class="block text-sm font-bold text-gray-600 mb-1">希望日時</label>
                             <input 
-                                id="requested_pickup_datetime" 
-                                type="datetime-local" 
                                 v-model="form.requested_pickup_datetime"
                                 :disabled="isFormLocked || form.processing"
-                                class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500 disabled:bg-gray-50 disabled:text-gray-500"
+                                type="datetime-local" 
+                                class="w-full rounded-xl border-gray-300 disabled:bg-gray-100"
                             />
-                            <p class="text-xs text-gray-500 mt-1">現在時刻よりも後の日時を指定してください。</p>
-                            <div v-if="form.errors.requested_pickup_datetime" class="text-sm text-red-600 mt-1">{{ form.errors.requested_pickup_datetime }}</div>
                         </div>
 
                         <div class="pt-4">
                             <button 
                                 type="submit" 
                                 :disabled="isFormLocked || form.processing"
-                                class="w-full justify-center rounded-md border border-transparent bg-indigo-600 py-3 px-4 text-lg font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition disabled:bg-indigo-300 disabled:cursor-not-allowed"
+                                class="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 disabled:bg-gray-300"
                             >
-                                <span v-if="isFormLocked">リクエストは処理中です...</span>
-                                <span v-else-if="form.processing">リクエスト送信中...</span>
-                                <span v-else>配車をリクエスト</span>
+                                <span v-if="isFormLocked">リクエスト済みです</span>
+                                <span v-else-if="form.processing">送信中...</span>
+                                <span v-else>配車を依頼する</span>
                             </button>
                         </div>
                     </form>
 
-                    <!-- 現在のリクエストステータス表示エリア -->
-                    <div v-if="activeRequest" class="mt-8 pt-6 border-t border-gray-200">
-                        <h4 class="text-lg font-semibold text-gray-700 mb-2">現在の状況</h4>
-                        
-                        <!-- ドライバー未確定 (driver_id が null) -->
-                        <div v-if="!isDriverAssigned" class="p-4 rounded-lg bg-yellow-50 border border-yellow-200">
-                            <div class="flex items-center">
-                                <span class="animate-pulse mr-2 text-yellow-500">●</span>
-                                <p class="text-yellow-800 font-bold">{{ currentStatusText }}</p>
-                            </div>
-                            <p class="text-sm mt-2 text-yellow-700">近隣のドライバーにリクエストを送信しています。確定までしばらくお待ちください。</p>
-                        </div>
+                    <!-- ステータス表示 -->
+                    <div v-if="props.activeRequest" class="mt-10 pt-8 border-t border-gray-200">
+                        <div :class="isDriverAssigned ? 'bg-indigo-50 border-indigo-100' : 'bg-amber-50 border-amber-100'" 
+                             class="p-6 rounded-2xl border-2">
+                            
+                            <p class="font-bold text-lg mb-4" :class="isDriverAssigned ? 'text-indigo-900' : 'text-amber-900'">
+                                {{ currentStatusText }}
+                            </p>
 
-                        <!-- ドライバー確定済み (driver_id が存在) -->
-                        <div v-else class="p-4 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800">
-                            <div class="flex justify-between items-center mb-2">
-                                <p class="font-bold text-lg">{{ currentStatusText }}</p>
-                                <span class="bg-indigo-600 text-white text-xs px-2 py-1 rounded">確定</span>
-                            </div>
-                            <div class="space-y-1 text-sm">
-                                <p>担当ドライバー: <span class="font-bold">{{ activeRequest.driver?.name || '手配中' }}</span></p>
-                                <p>出発地: {{ activeRequest.start_location }}</p>
-                                <p>到着地: {{ activeRequest.end_location }}</p>
+                            <div class="space-y-3 text-sm text-gray-700">
+                                <p><span class="font-bold text-gray-400">ドライバー:</span> {{ props.activeRequest?.driver?.name ?? 'マッチング中' }}</p>
+                                <p><span class="font-bold text-gray-400">区間:</span> {{ props.activeRequest?.start_location }} → {{ props.activeRequest?.end_location }}</p>
                             </div>
                         </div>
                     </div>

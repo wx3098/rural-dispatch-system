@@ -29,14 +29,14 @@ class DashboardController extends Controller
 
         // 2. 自分が現在引き受けているリクエスト
         // ユーザー側の画面で名前を表示できるよう 'user' リレーションを含める
-        $activeAssignment = Dispatch::with('user:id,name')
+        $activeAssignments = Dispatch::with('user:id,name')
             ->where('driver_id', $user->id)
             ->whereIn('status', ['accepted', 'in_transit']) // Vue側のステータス判定と合わせる
-            ->first();
+            ->get();
 
         return Inertia::render('Driver/DriverDashboard', [
             'pendingDispatches' => $pendingDispatches,
-            'activeAssignment' => $activeAssignment,
+            'activeAssignments' => $activeAssignments,
         ]);
     }
 
@@ -74,9 +74,26 @@ class DashboardController extends Controller
 
         $dispatch->update([
             'driver_id' => Auth::id(),
-            'status' => 'accepted',
+            'status' => 'completed',
         ]);
 
-        return redirect()->route('driver.dashboard')->with('success', 'お疲れ様でした！配送完了を記録しました。');
+        return redirect()->route('driver.dashboard')->with('success', 'お疲れ様でした！送迎完了を記録しました。');
+    }
+
+    //複数の依頼を一括完了する
+    public function bulkComplete(Request $request)
+    {
+        $ids = $request->input('dispatch_ids');
+
+        if (empty($ids) || !is_array($ids)) {
+            return back()->with('error', '完了対象が選択されていません。'); 
+        }
+
+        //ログイン中のドライバーに割り当てられている対象を一括更新
+        $updateCount = Dispatch::whereIn('id', $ids)
+            ->where('driver_id', Auth::id())
+            ->update(['status' => 'completed']);
+
+        return redirect()->route('driver.dashboard')->with('success', "{$updateCount}名の送迎を完了しました。");
     }
 }
