@@ -58,15 +58,30 @@ const handleAccept = (id) => {
 const handleSingleComplete = (dispatch) => {
     if (!dispatch || !dispatch.id) return;
 
-    const userName = dispatch.user?.name || '利用者'
-    if (confirm(`${userName}様の報告をしますか？`)) {
+    navigator.geolocation.getCurrentPosition (
+        (position) => {
+            form.latitude = position.coords.latitude;
+            form.longitude = position.coords.longitude;
 
-        form.post(route('driver.complete', {dispatch: dispatch.id}), {
-            preserveScroll: true,
-            onSuccess: () => notify(`${userName} 様の報告をしました。`),
-            onError: () => notify('処理中にエラーが発生しました。', 'error')
-        });
-    }
+            if (confirm(`${dispatch.user?.name}様の到着を報告しますか？`)) {
+                form.post(route('driver.complete', {dispatch: dispatch.id}), {
+                    preserveScroll: true,
+                    onSuccess: () => notify('完了しました'),
+                });
+            }
+        },
+        (error) => {
+            const userName = dispatch.user?.name || '利用者';
+            notify('位置情報が取得できませんでした', 'error');
+
+            if (confirm(`${userName} 様の報告をしますか？（位置情報なしで送信）`)) {
+                form.post(route('driver.complete', { dispatch: dispatch.id }), {
+                    preserveScroll: true,
+                    onSuccess: () => notify(`${userName} 様の報告をしました。`),
+                });
+            }
+        }
+    );
 };
 
 /**
