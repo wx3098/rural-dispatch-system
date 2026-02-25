@@ -3,95 +3,132 @@ import { ref, watch, computed } from 'vue';
 import { Head, useForm, usePage } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
-// 1. propsの定義: サーバー(Laravel)から渡されるデータを受け取ります
+/**
+ * 1. Props Definition
+ * Standard JavaScript object format for Vue 3 defineProps to avoid syntax errors.
+ */
 const props = defineProps({
     auth: Object,
+    // For Driver
     pendingDispatches: { type: Array, default: () => [] },
     activeAssignments: { type: Array, default: () => [] },
+    // For User
+    myDispatches: { type: Array, default: () => [] },
     flash: { type: Object, default: () => ({ success: null, error: null }) }
 });
 
-// 2. Inertiaフォームの初期化: POST送信時に使用します
-const form = useForm({
-    dispatch_ids: [], // 一括処理用
-    latitude: null,   // 位置情報用
-    longitude: null   // 位置情報用
-});
 const page = usePage();
+const userRole = computed(() => props.auth?.user?.role || 'user');
 
-// 3. 通知(トースト)管理の状態
+/**
+ * 2. Form for Booking (General User)
+ */
+const bookingForm = useForm({
+    pickup_location: '',
+    end_location: '',
+    latitude: null,
+    longitude: null
+});
+
+/**
+ * 3. Form for Driver Actions
+ */
+const driverForm = useForm({
+    dispatch_ids: []
+});
+
+/**
+ * 4. UI States
+ */
 const showToast = ref(false);
 const toastMessage = ref('');
 const toastType = ref('success');
-
-// 4. 地図モーダル管理の状態
 const showMapModal = ref(false);
-const selectedLocation = ref('');
+const mapMode = ref('view'); // 'view', 'pickup', 'destination'
+const mapRef = ref(null);
 
-// 通知を表示する関数
 const notify = (message, type = 'success') => {
     toastMessage.value = message;
     toastType.value = type;
     showToast.value = true;
     setTimeout(() => { showToast.value = false; }, 5000);
-}
+};
 
-// 5. 目的地ごとにデータをまとめる計算プロパティ
+/**
+ * 5. Map Logic (Selection & Geolocation)
+ */
+const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+        notify('お使いのブラウザは位置情報に対応していません', 'error');
+        return;
+    }
+    navigator.geolocation.getCurrentPosition((position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        // Mocking address conversion for demo
+        bookingForm.pickup_location = `現在地 (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+        bookingForm.latitude = lat;
+        bookingForm.longitude = lng;
+        notify('現在地を取得しました');
+    }, () => {
+        notify('位置情報の取得に失敗しました', 'error');
+    });
+};
+
+const openMapForSelection = (mode) => {
+    mapMode.value = mode;
+    showMapModal.value = true;
+};
+
+const confirmSelection = () => {
+    if (mapMode.value === 'pickup') {
+        bookingForm.pickup_location = "地図で指定した乗車場所";
+    } else if (mapMode.value === 'destination') {
+        bookingForm.end_location = "地図で指定した目的地";
+    }
+    showMapModal.value = false;
+};
+
+/**
+ * 6. Driver Logic (Acceptance & Completion)
+ */
+const handleAccept = (id) => {
+    if (!confirm('この依頼を引き受けますか？')) return;
+    driverForm.post(`/driver/dispatches/${id}/accept`, {
+        onSuccess: () => notify('依頼を受諾しました')
+    });
+};
+
+const handleBulkComplete = (location, dispatches) => {
+    const ids = dispatches.map(d => d.id);
+    if (!confirm(`「${location}」への到着を完了しますか？`)) return;
+    driverForm.dispatch_ids = ids;
+    driverForm.post(route('driver.dashboard.bulk-complete'), {
+        onSuccess: () => {
+            notify('完了報告を送信しました');
+            showMapModal.value = false;
+        }
+    });
+};
+
+// Grouping logic for drivers
 const groupedAssignments = computed(() => {
-    return props.activeAssignments.reduce((acc, curr) => {
-        const loc = curr.end_location || '目的地未設定';
+    return (props.activeAssignments || []).reduce((acc, curr) => {
+        const loc = curr.end_location || '未設定';
         if (!acc[loc]) acc[loc] = [];
         acc[loc].push(curr);
         return acc;
     }, {});
 });
 
-// 6. 受諾ボタン: 依頼を自分の担当にする
-const handleAccept = (id) => {
-    if (!id) return;
-    if (confirm('この依頼を受諾しますか？')) {
-        form.post(`/driver/dispatches/${id}/accept`, {
-            preserveScroll: true,
-            onSuccess: () => notify('依頼を受諾しました'),
-        });
-    }
-};
-
-// 7. 地図をアプリ内で開く関数
-const openMap = (location) => {
-    if (!location) return;
-    selectedLocation.value = location;
-    showMapModal.value = true;
-};
-
-// 8. 到着報告（一括完了）
-const handleBulkComplete = (location, dispatches) => {
-    const ids = dispatches.map(d => d.id);
-    if (confirm(`「${location}」へ到着した ${ids.length} 名の送迎を完了しますか？`)) {
-        // form.dispatch_ids にID配列をセットしてから送信
-        form.dispatch_ids = ids; 
-        
-        // 第2引数にデータを直接入れるのではなく、formのプロパティとして送信します
-        form.post(route('driver.dashboard.bulk-complete'), {
-            preserveScroll: true,
-            onSuccess: () => {
-                notify('一括完了を報告しました。');
-                showMapModal.value = false; // 地図を開いていたら閉じる
-            },
-            onError: () => notify('処理中にエラーが発生しました', 'error')
-        });
-    }
-};
-
-// サーバーサイドからのメッセージを監視
-watch(() => page.props.flash?.success, (newVal) => { if (newVal) notify(newVal, 'success'); });
-watch(() => page.props.flash?.error, (newVal) => { if (newVal) notify(newVal, 'error'); });
+watch(() => page.props.flash?.success, (val) => val && notify(val));
+watch(() => page.props.flash?.error, (val) => val && notify(val, 'error'));
 </script>
 
 <template>
-    <Head title="ドライバーダッシュボード" />
+    <Head title="送迎管理システム" />
 
-    <!-- 通知トースト -->
+    <!-- Notifications -->
     <Transition name="toast">
         <div v-if="showToast" class="fixed top-5 right-5 z-[100] p-4 rounded-2xl shadow-2xl border-2 bg-white flex items-center gap-3">
             <span :class="toastType === 'success' ? 'text-green-500' : 'text-red-500'">●</span>
@@ -101,77 +138,135 @@ watch(() => page.props.flash?.error, (newVal) => { if (newVal) notify(newVal, 'e
 
     <AuthenticatedLayout>
         <div class="py-12 bg-slate-50 min-h-screen">
-            <div class="max-w-7xl mx-auto px-4 space-y-8">
+            <div class="max-w-4xl mx-auto px-4 space-y-10">
                 
-                <!-- 現在の任務セクション -->
-                <section>
-                    <h3 class="text-lg font-bold mb-4 flex items-center gap-2">
-                        <span class="w-3 h-3 bg-blue-600 rounded-full"></span>
-                        運行中の任務（目的地別）
-                    </h3>
-                    
-                    <div v-if="Object.keys(groupedAssignments).length > 0" class="space-y-6">
-                        <div v-for="(dispatches, location) in groupedAssignments" :key="location" 
-                             class="bg-white rounded-[2rem] shadow-sm border border-slate-200 overflow-hidden">
-                            
-                            <!-- ヘッダー兼地図ボタン -->
-                            <div class="bg-slate-50 px-8 py-4 border-b flex justify-between items-center">
-                                <button @click="openMap(location)" class="flex items-center gap-2 group">
-                                    <span class="text-xl">📍</span>
-                                    <span class="font-black text-blue-600 underline underline-offset-4">{{ location }}</span>
-                                    <span class="text-xs bg-blue-600 text-white px-2 py-0.5 rounded">地図を表示</span>
-                                </button>
-                                <span class="bg-blue-100 text-blue-700 text-[10px] font-black px-3 py-1 rounded-full">
-                                    {{ dispatches.length }}名
-                                </span>
-                            </div>
-
-                            <!-- 利用者リスト -->
-                            <div class="p-8 space-y-4">
-                                <div v-for="dispatch in dispatches" :key="dispatch.id" class="flex justify-between items-center bg-slate-50/50 p-4 rounded-xl border">
-                                    <div class="font-bold text-slate-800">{{ dispatch.user?.name }} 様</div>
-                                    <div class="text-xs text-slate-400">#{{ dispatch.id }}</div>
+                <!-- ================= DRIVER DASHBOARD ================= -->
+                <template v-if="userRole === 'driver'">
+                    <!-- New Requests Section -->
+                    <section>
+                        <h3 class="text-xl font-black mb-4 flex items-center gap-2">
+                            <span class="flex h-3 w-3 rounded-full bg-red-500 animate-ping"></span>
+                            待機中の依頼（新規）
+                        </h3>
+                        <div v-if="props.pendingDispatches && props.pendingDispatches.length > 0" class="grid gap-4">
+                            <div v-for="req in props.pendingDispatches" :key="req.id" class="bg-white p-6 rounded-3xl border shadow-sm flex justify-between items-center">
+                                <div>
+                                    <div class="font-bold text-lg">{{ req.user?.name }} 様</div>
+                                    <div class="text-sm text-slate-500">
+                                        <span class="font-bold text-blue-600">乗車:</span> {{ req.pickup_location }} <br>
+                                        <span class="font-bold text-orange-600">降車:</span> {{ req.end_location }}
+                                    </div>
                                 </div>
-                                
-                                <!-- 完了ボタン -->
-                                <button 
-                                    @click="handleBulkComplete(location, dispatches)"
-                                    :disabled="form.processing"
-                                    class="w-full mt-4 py-5 bg-slate-900 text-white rounded-2xl font-black hover:bg-black transition-all active:scale-95 disabled:opacity-50 text-lg shadow-xl"
-                                >
-                                    {{ form.processing ? '送信中...' : `「${location}」到着完了を報告` }}
+                                <button @click="handleAccept(req.id)" class="bg-blue-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-blue-700 transition-transform active:scale-95 shadow-lg">
+                                    受諾する
                                 </button>
                             </div>
                         </div>
-                    </div>
-                </section>
+                        <div v-else class="bg-slate-200/50 border-2 border-dashed border-slate-300 p-10 rounded-3xl text-center text-slate-500 font-bold">
+                            現在、新しい依頼はありません
+                        </div>
+                    </section>
+
+                    <!-- Active Tasks Section -->
+                    <section v-if="Object.keys(groupedAssignments).length > 0">
+                        <h3 class="text-xl font-black mb-4 flex items-center gap-2 text-slate-700">
+                            <span class="h-3 w-3 rounded-full bg-blue-600"></span>
+                            対応中の送迎
+                        </h3>
+                        <div class="space-y-6">
+                            <div v-for="(dispatches, location) in groupedAssignments" :key="location" class="bg-white rounded-[2rem] shadow-md border border-slate-200 overflow-hidden">
+                                <div class="bg-slate-900 text-white px-8 py-4 flex justify-between items-center">
+                                    <span class="font-bold">目的地: {{ location }}</span>
+                                    <span class="text-xs bg-white/20 px-2 py-1 rounded">{{ dispatches.length }}名</span>
+                                </div>
+                                <div class="p-6 space-y-3">
+                                    <div v-for="d in dispatches" :key="d.id" class="p-3 bg-slate-50 rounded-xl border flex justify-between">
+                                        <span class="font-bold">{{ d.user?.name }} 様</span>
+                                        <span class="text-slate-400 text-xs">#{{ d.id }}</span>
+                                    </div>
+                                    <button @click="handleBulkComplete(location, dispatches)" class="w-full mt-4 bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg">
+                                        到着を報告する
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </template>
+
+                <!-- ================= USER DASHBOARD ================= -->
+                <template v-else>
+                    <section class="bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
+                        <h2 class="text-2xl font-black mb-8 text-slate-800">配車を予約する</h2>
+                        
+                        <div class="space-y-6">
+                            <!-- Pickup Location -->
+                            <div>
+                                <label class="block text-sm font-bold text-slate-500 mb-2">どこから乗りますか？</label>
+                                <div class="flex gap-2">
+                                    <div class="relative flex-1">
+                                        <input v-model="bookingForm.pickup_location" type="text" class="w-full pl-10 pr-4 py-4 bg-slate-100 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500" placeholder="住所を入力するか地図で選択">
+                                        <span class="absolute left-3 top-4">📍</span>
+                                    </div>
+                                    <button @click="getCurrentLocation" type="button" class="bg-white border-2 border-blue-600 text-blue-600 px-4 rounded-2xl font-bold hover:bg-blue-50">
+                                        現在地
+                                    </button>
+                                </div>
+                                <button @click="openMapForSelection('pickup')" type="button" class="mt-2 text-sm text-blue-600 font-bold underline">地図から細かく指定する</button>
+                            </div>
+
+                            <!-- Destination -->
+                            <div>
+                                <label class="block text-sm font-bold text-slate-500 mb-2">どこへ行きますか？</label>
+                                <div class="relative">
+                                    <input v-model="bookingForm.end_location" type="text" class="w-full pl-10 pr-4 py-4 bg-slate-100 border-none rounded-2xl font-bold focus:ring-2 focus:ring-orange-500" placeholder="目的地を入力">
+                                    <span class="absolute left-3 top-4 text-orange-500">🏁</span>
+                                </div>
+                                <button @click="openMapForSelection('destination')" type="button" class="mt-2 text-sm text-orange-600 font-bold underline">地図で目的地を選ぶ</button>
+                            </div>
+
+                            <button :disabled="bookingForm.processing" class="w-full py-6 bg-slate-900 text-white rounded-[2rem] font-black text-xl shadow-2xl hover:bg-black transition-all active:scale-95 mt-4">
+                                {{ bookingForm.processing ? '予約中...' : 'この内容で呼ぶ' }}
+                            </button>
+                        </div>
+                    </section>
+
+                    <!-- User Status -->
+                    <section v-if="props.myDispatches && props.myDispatches.length > 0">
+                        <h3 class="font-black text-slate-600 mb-4">現在のステータス</h3>
+                        <div v-for="myReq in props.myDispatches" :key="myReq.id" class="bg-blue-50 border border-blue-100 p-6 rounded-3xl flex items-center justify-between mb-4">
+                            <div>
+                                <div class="font-black text-blue-800">{{ myReq.status === 'pending' ? 'ドライバーを探しています...' : 'ドライバーが向かっています' }}</div>
+                                <div class="text-sm text-blue-600">{{ myReq.end_location }} 行き</div>
+                            </div>
+                            <div class="text-3xl animate-bounce">🚗</div>
+                        </div>
+                    </section>
+                </template>
+
             </div>
         </div>
 
-        <!-- 地図モーダル（アプリ内に留める工夫） -->
-        <div v-if="showMapModal" class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div class="bg-white w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl flex flex-col h-[85vh]">
+        <!-- Map Selection Modal -->
+        <div v-if="showMapModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <div class="bg-white w-full max-w-2xl rounded-[2.5rem] overflow-hidden shadow-2xl flex flex-col h-[80vh]">
                 <div class="p-6 border-b flex justify-between items-center">
-                    <h2 class="font-black text-xl text-slate-800">目的地: {{ selectedLocation }}</h2>
-                    <button @click="showMapModal = false" class="text-slate-400 text-2xl font-bold">×</button>
+                    <h2 class="font-black text-xl">{{ mapMode === 'pickup' ? '乗車場所を指定' : '目的地を指定' }}</h2>
+                    <button @click="showMapModal = false" class="text-2xl">×</button>
                 </div>
                 
-                <div class="flex-1 bg-slate-100">
-                    <!-- iframeを使ってアプリ内で地図を表示 -->
-                    <iframe
-                        width="100%"
-                        height="100%"
-                        frameborder="0"
-                        style="border:0"
-                        :src="`https://maps.google.co.jp/maps?output=embed&q=${encodeURIComponent(selectedLocation)}`"
-                        allowfullscreen
-                    ></iframe>
-                    <!-- ※APIキーがない場合は Google Maps Search URL (output=embed) を使用 -->
+                <div class="flex-1 bg-slate-200 relative">
+                    <div class="absolute inset-0 flex items-center justify-center text-slate-400 font-bold italic text-center px-6">
+                        地図をドラッグして<br>中心のピンを合わせます
+                    </div>
+                    <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div class="text-4xl mb-10 drop-shadow-lg">📍</div>
+                    </div>
                 </div>
 
-                <div class="p-6">
-                    <button @click="showMapModal = false" class="w-full bg-slate-800 text-white py-4 rounded-xl font-bold">
-                        アプリのリストに戻る
+                <div class="p-6 bg-white space-y-3">
+                    <p class="text-xs text-slate-500 text-center font-bold">地図を動かして中心にピンを合わせてください</p>
+                    <button @click="confirmSelection" class="w-full bg-slate-900 text-white py-4 rounded-2xl font-black">
+                        この場所を{{ mapMode === 'pickup' ? '乗車地' : '目的地' }}にする
                     </button>
                 </div>
             </div>
@@ -183,4 +278,6 @@ watch(() => page.props.flash?.error, (newVal) => { if (newVal) notify(newVal, 'e
 .toast-enter-active, .toast-leave-active { transition: all 0.3s ease; }
 .toast-enter-from { transform: translateY(-20px); opacity: 0; }
 .toast-leave-to { transform: translateX(20px); opacity: 0; }
+
+input::placeholder { color: #94a3b8; font-weight: normal; }
 </style>
