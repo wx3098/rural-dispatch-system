@@ -44,7 +44,7 @@ const showToast = ref(false);
 const toastMessage = ref('');
 const toastType = ref('success');
 const showMapModal = ref(false);
-const mapMode = ref('view'); // 'view', 'pickup', 'destination'
+const mapMode = ref('view'); 
 const mapRef = ref(null);
 
 const notify = (message, type = 'success') => {
