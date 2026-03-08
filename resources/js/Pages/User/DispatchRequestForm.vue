@@ -1,4 +1,5 @@
 <script setup>
+import { router } from '@inertiajs/vue3';
 import { ref, computed, nextTick } from 'vue';
 
 // --- プレビュー環境用モック ---
@@ -125,7 +126,16 @@ const roleDisplayName = computed(() => typeof props.role === 'object' ? props.ro
                         <h3 class="text-3xl font-black text-gray-800 tracking-tighter">どこへ行きますか？</h3>
                         <p class="text-[10px] font-black text-indigo-400 mt-2 uppercase tracking-[0.2em]">USER: {{ roleDisplayName }}</p>
                     </div>
-                    <div v-if="isFormLocked" class="bg-amber-100 text-amber-700 px-4 py-2 rounded-full text-[10px] font-black uppercase">進行中</div>
+                    <div class="flex flex-col items-end gap-2">
+                        <div v-if="isFormLocked" class="bg-amber-100 text-amber-700 px-4 py-2 rounded-full text-[10px] font-black uppercase">進行中</div>
+                        <button
+                            type="button"
+                            @click="router.post('/logout')"
+                            class="text-[15px] font-black text-red-400 hover:tect-red-600 uppercase tracking-widest"
+                        >
+                            ログアウト
+                        </button>
+                    </div>
                 </div>
 
                 <form @submit.prevent="submit" class="space-y-8">
