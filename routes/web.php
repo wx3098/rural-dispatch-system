@@ -49,6 +49,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/dispatch/form', [DispatchController::class, 'form'])->name('dispatch.form');
         // 配車リクエスト保存処理
         Route::post('/dispatch/store', [DispatchController::class, 'store'])->name('dispatch.store');
+        //Gemini API
+        Route::post('/dispatch/suggest',[DispatchController::class, 'suggestDestination'])->name('dispatch.suggest');
     });
 
     // プロフィール関連

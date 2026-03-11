@@ -108,6 +108,39 @@ const submit = () => {
     }, 1500);
 };
 
+//Geminiサジェスト
+const suggestions = ref([]);
+const isSuggesting = ref(false);
+
+const fetchSuggestions = async () => {
+    if (!form.value.end_location  ||  form.value.end_location.length < 2) {
+        suggestions.value = [];
+        return;
+    }
+    isSuggesting.value = true;
+    try {
+        const response = await fetch(window.location.origin + 'user/dispatch/suggest', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            },
+            body: JSON.stringify({ query: form.value.end_location})
+        });
+        const data = await response.json();
+        suggestions.value = data.suggestions || [];
+    } catch (e) {
+        suggestions.value = [];
+    } finally {
+        isSuggesting.value = false;
+    }
+};
+
+const selectSuggestion = (suggestion) => {
+    form.value.end_location = suggestion;
+    suggestions.value = [];
+};
+
 const isFormLocked = computed(() => !!(props.activeRequest && props.activeRequest?.status !== 'completed'));
 const isDriverAssigned = computed(() => !!(props.activeRequest?.driver_id));
 const currentStatusText = computed(() => {
@@ -169,8 +202,9 @@ const roleDisplayName = computed(() => typeof props.role === 'object' ? props.ro
                             <input 
                                 v-model="form.end_location"
                                 :disabled="isFormLocked"
+                                @input="fetchSuggestions"
                                 class="w-full pl-6 pr-16 py-6 bg-gray-50 border-2 border-gray-100 rounded-[1.5rem] font-bold outline-none focus:border-indigo-300 transition-all"
-                                placeholder="目的地を入力または右のアイコン"
+                                placeholder="目的地を入力(例：病院)"
                             />
                             <button 
                                 type="button"
@@ -178,6 +212,19 @@ const roleDisplayName = computed(() => typeof props.role === 'object' ? props.ro
                                 class="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center bg-white shadow-sm border border-gray-100 rounded-xl hover:bg-orange-50 transition-colors"
                             >
                                 🏁
+                            </button>
+                        </div>
+                        <!-- サジェスト -->
+                        <div v-if="suggestions.length > 0" class="bg-white border-2 border-indigo-100 rounded-[1.5rem] overflow-hidden shadow-lg">
+                            <div v-if="isSuggesting" class="px-6 py-4 text-sm text-gray-499 font-bold">検索中,,,</div>
+                            <button
+                                v-for="(s,i) in suggestions"
+                                :key="i"
+                                type="button"
+                                @click="selectSuggestion(s)"
+                                class="w-full text-left px-6 py-4 hover:bg-indigo-50 font-bold text-gray-700 border-b border-gray-50 last:border-0 transition-colors"
+                            >
+                                📍 {{ s }}
                             </button>
                         </div>
                     </div>
